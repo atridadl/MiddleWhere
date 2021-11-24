@@ -1,0 +1,54 @@
+kind: pipeline
+type: docker
+name: dev
+
+trigger:
+  branch:
+    - master
+  event:
+    - push
+
+steps: 
+  - image: golang
+    name: test-build
+    commands:
+      - go build
+---
+kind: pipeline
+type: docker
+name: prod
+
+trigger:
+  event:
+    - tag
+
+steps:
+  - image: golang
+    name: build-backend
+    commands:
+      - chmod +x ./build.sh
+      - ./build.sh
+
+  - image: node
+    name: pre-upload
+    commands:
+      - curl -L https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 > jq
+      - chmod +x ./jq
+      - LATEST_RELEASE_ID=$(curl -s https://git.atrilahiji.dev/api/v1/repos/atrilahiji/middlewhere/releases | ./jq -r '.[0].name')
+      - rm -rf bin/darwin-amd64
+      - rm -rf bin/linux-amd64
+      - mv bin/darwin-amd64.tar.gz  bin/$LATEST_RELEASE_ID-darwin-amd64.tar.gz
+      - mv bin/linux-amd64.tar.gz  bin/$LATEST_RELEASE_ID-linux-amd64.tar.gz 
+
+  - image: plugins/s3
+    name: upload
+    settings:
+      access_key:
+        from_secret: S3_ACCESS
+      secret_key:
+        from_secret: S3_SECRET
+      bucket: middlewhere
+      source: bin/**/*
+      target: /
+      path_style: true
+      endpoint: https://s3.atrilahiji.dev
